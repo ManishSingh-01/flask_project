@@ -1,0 +1,67 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_DEFAULT_REGION = "ap-south-1"
+        REPO_NAME = "my-ecr-repo"
+        ACCOUNT_ID = "255260635680"  // replace with your AWS account ID
+        IMAGE_TAG = "latest"
+        ECR_REPO_URL = "${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${REPO_NAME}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/ManishSingh-01/flask_project.git'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    sh """
+                    docker build -t ${REPO_NAME}:${IMAGE_TAG} .
+                    """
+                }
+            }
+        }
+
+        stage('Push to ECR') {
+            steps {
+                script {
+                    sh """
+                    aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | \
+                    docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+
+                    docker tag ${REPO_NAME}:${IMAGE_TAG} ${ECR_REPO_URL}:${IMAGE_TAG}
+                    docker push ${ECR_REPO_URL}:${IMAGE_TAG}
+                    """
+                }
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                dir('terraform') {
+                    sh 'terraform init'
+                }
+            }
+        }
+
+        stage('Terraform Plan') {
+            steps {
+                dir('terraform') {
+                    sh "terraform plan -var repo_name=${REPO_NAME}"
+                }
+            }
+        }
+
+        stage('Terraform Apply') {
+            steps {
+                dir('terraform') {
+                    sh "terraform apply -auto-approve -var repo_name=${REPO_NAME}"
+                }
+            }
+        }
+    }
+}
